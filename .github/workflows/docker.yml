@@ -1,0 +1,70 @@
+name: Docker Build Test & Push (GHCR)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t flask-app:latest .
+
+      - name: Save Docker image
+        run: docker save flask-app:latest -o flask-app.tar
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flask-app-image
+          path: flask-app.tar
+
+  test:
+    name: Test Docker Image
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: flask-app-image
+
+      - name: Load Docker image
+        run: docker load -i flask-app.tar
+
+      - name: Run container test
+        run: docker run --rm flask-app:latest echo "GHCR image works ✅"
+
+  push:
+    name: Push Docker Image to GHCR
+    runs-on: ubuntu-latest
+    needs: test
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: flask-app-image
+
+      - name: Load Docker image
+        run: docker load -i flask-app.tar
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Tag & Push image
+        run: |
+          docker tag flask-app:latest ghcr.io/${{ github.repository_owner }}/flask-app:latest
+          docker push ghcr.io/${{ github.repository_owner }}/flask-app:latest
